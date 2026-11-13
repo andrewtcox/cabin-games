@@ -304,7 +304,7 @@ function tvRecord() {
   const rows = stats.slice(0, 12).map((p, i) => `<tr><td class="muted">${i + 1}</td><td class="strong">${esc(p.name)}</td><td>${p.games}</td><td>${p.teamWins}</td><td>${p.mvps}</td><td class="strong">${p.totalChips}</td><td>${p.avgChips}</td><td>${p.closest}</td><td>${p.bestRound ? '+' + p.bestRound : '—'}</td></tr>`).join('');
   const games = recs.map((r) => {
     const mvp = (r.players || []).find((p) => p.rank === 1);
-    return `<div class="rec-game"><div class="small muted">${esc(new Date(r.finishedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }))} · ${esc(r.setName || '')}</div>
+    return `<div class="rec-game"><div class="small muted">${esc(new Date(r.finishedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }))} · ${esc(r.setName || '')}${r.endedEarly ? ` (${r.rounds} of ${r.totalRounds} rounds)` : ''}</div>
       <div class="strong">${r.winner ? esc(teamName(r.winner)) + ' won' : 'Tie'} ${r.teamTotals?.t1 ?? 0}–${r.teamTotals?.t2 ?? 0}</div>
       ${mvp ? `<div class="small">MVP: ${esc(mvp.name)} (${mvp.chips})</div>` : ''}</div>`;
   }).join('');
@@ -325,7 +325,7 @@ function tvOver() {
       <div class="eyebrow">Game over</div>
       <div class="over-title">${winner ? esc(teamName(winner)) + ' wins!' : 'It’s a tie!'}</div>
       <div class="big">${tt[1] || 0} – ${tt[2] || 0}${top ? ` · Top player: ${esc(top.name)} (${top.chips})` : ''}${G.setName ? ' · ' + esc(G.setName) : ''}</div>
-      <div class="small">Saved to the record book</div>
+      <div class="small">${G.endedEarly != null ? `Ended early after ${G.endedEarly} of ${G.totalRounds} rounds · ` : ''}Saved to the record book</div>
     </div>
     ${tvScores().replace(/<div class="tv-head">[\s\S]*?<\/div><\/div>/, '')}`;
 }
@@ -554,14 +554,46 @@ function saveBets() {
 // ══════════════════════════════════════════════════════════════════════════════
 // HOST
 // ══════════════════════════════════════════════════════════════════════════════
-const SETS_KEY = 'ww-sets-' + GAME_ID;
+const SETS_KEY = 'ww-sets-' + GAME_ID; // old per-laptop storage; now only a backup / one-time import
 const clone = (x) => JSON.parse(JSON.stringify(x));
-function loadSets() {
-  try { const s = JSON.parse(localStorage.getItem(SETS_KEY)); if (Array.isArray(s) && s.length) return s; } catch { /* default */ }
-  return clone(QUESTION_SETS);
+const normSets = (list) => (Array.isArray(list) ? list : Object.values(list || {}))
+  .filter(Boolean)
+  .map((s) => ({ id: s.id, name: s.name || 'Untitled', desc: s.desc || '', questions: (Array.isArray(s.questions) ? s.questions : Object.values(s.questions || {})).filter(Boolean) }));
+function localSets() {
+  try { const s = JSON.parse(localStorage.getItem(SETS_KEY)); if (Array.isArray(s) && s.length) return s; } catch { /* none */ }
+  return null;
 }
-let SETS = ROUTE === 'host' ? loadSets() : [];
-const saveSets = () => localStorage.setItem(SETS_KEY, JSON.stringify(SETS));
+// Question sets live in the database (sets/<GAME_ID>) so they survive browser cleanup and work from any device.
+let SETS = ROUTE === 'host' ? clone(QUESTION_SETS) : [];
+let setsStatus = 'loading'; // 'loading' | 'ok' | 'offline'
+function saveSets() {
+  try { localStorage.setItem(SETS_KEY, JSON.stringify(SETS)); } catch { /* backup only */ }
+  if (setsStatus === 'ok') {
+    backend.sets.set({ list: SETS, updatedAt: backend.now() }).catch((e) => { console.error(e); setsStatus = 'offline'; render(); });
+  }
+}
+if (ROUTE === 'host') {
+  backend.sets.on((v) => {
+    const list = v && v.list ? normSets(v.list) : [];
+    if (list.length) {
+      SETS = list;
+      setsStatus = 'ok';
+    } else if (setsStatus === 'loading') {
+      // First run: seed the database from any sets saved on this laptop, else the starter sets.
+      setsStatus = 'ok';
+      SETS = normSets(localSets() || clone(QUESTION_SETS));
+      saveSets();
+    }
+    lastHtml = '';
+    render();
+  }, (err) => {
+    console.error('Could not load question sets from the database', err);
+    setsStatus = 'offline';
+    SETS = normSets(localSets() || clone(QUESTION_SETS));
+    lastHtml = '';
+    render();
+  });
+}
 const setById = (id) => SETS.find((s) => s.id === id);
 const activeSet = () => setById(G.setId) || null;
 const qs = () => (activeSet() || { questions: [] }).questions;
@@ -614,7 +646,7 @@ function hostRecordCard() {
   const recs = Object.entries(HISTORY).sort((a, b) => (b[1].finishedAt || 0) - (a[1].finishedAt || 0));
   const list = recs.map(([k, r]) => {
     const mvp = (r.players || []).find((p) => p.rank === 1);
-    return `<div class="hist-row"><div><b>${esc(shortDate(r.finishedAt))}</b> · ${esc(r.setName || 'Custom')}<div class="small muted">${r.winner ? esc(teamName(r.winner)) + ' won' : 'Tie'} ${r.teamTotals?.t1 ?? 0}–${r.teamTotals?.t2 ?? 0}${mvp ? ' · MVP ' + esc(mvp.name) + ' (' + mvp.chips + ')' : ''}</div></div>
+    return `<div class="hist-row"><div><b>${esc(shortDate(r.finishedAt))}</b> · ${esc(r.setName || 'Custom')}${r.endedEarly ? ` <span class="muted small">(${r.rounds} of ${r.totalRounds} rounds)</span>` : ''}<div class="small muted">${r.winner ? esc(teamName(r.winner)) + ' won' : 'Tie'} ${r.teamTotals?.t1 ?? 0}–${r.teamTotals?.t2 ?? 0}${mvp ? ' · MVP ' + esc(mvp.name) + ' (' + mvp.chips + ')' : ''}</div></div>
       <button class="mini" data-act="deleteRecord" data-key="${esc(k)}" title="Delete this game from the record book">✕</button></div>`;
   }).join('');
   return `<div class="card">
@@ -684,7 +716,9 @@ function renderHost() {
 
   return `<div class="host">
     <div class="row-between">
-      <div class="host-title">Host · Wits &amp; Wagers <span class="muted small">game “${esc(GAME_ID)}”</span></div>
+      <div class="host-title">Host · Wits &amp; Wagers <span class="muted small">game “${esc(GAME_ID)}”</span>
+        ${setsStatus === 'offline' && !LOCAL ? '<div class="error">Question sets couldn’t be saved to the database — edits are only kept on this laptop. Check that the Firebase rules include “sets” (see README).</div>' : ''}
+        ${setsStatus === 'loading' && !LOCAL ? '<div class="muted small">Loading question sets…</div>' : ''}</div>
       <div class="row-gap">
         <button class="secondary" data-act="openTV">Open TV board</button>
         <button class="secondary" data-act="openEditor">Edit question sets</button>
@@ -704,6 +738,7 @@ function renderHost() {
           <div class="row-gap wrap">
             ${clockCtl}
             <button class="secondary" data-act="undo" ${host.undo.length ? '' : 'disabled'}>Undo last step</button>
+            ${inGame && G.phase !== 'over' ? '<button class="secondary danger" data-act="endEarly">End game now</button>' : ''}
           </div>
         </div>
         ${hostRecordCard()}
@@ -832,13 +867,23 @@ const HOST_ACTIONS = {
     backend.update(paths);
   },
   showScores() { snapshot(); backend.update({ phase: 'scores' }); },
-  finish() {
+  finish(early) {
+    early = early === true;
     snapshot();
     const key = G.gameKey || 'g' + backend.now();
     const set = activeSet();
     const rec = gameRecord(G, { setId: G.setId, setName: set ? set.name : G.setName, finishedAt: backend.now() });
+    rec.totalRounds = G.totalRounds || rec.rounds;
+    if (early) rec.endedEarly = true;
     backend.history.update({ [key]: rec });
-    backend.update({ phase: 'over', gameKey: key });
+    backend.update({ phase: 'over', gameKey: key, clock: null, endedEarly: early ? rec.rounds : null });
+  },
+  endEarly() {
+    const done = Object.keys(G.results || {}).length;
+    const mid = G.phase === 'guessing' || G.phase === 'betting';
+    const msg = `End the game now?\n\n${done} of ${G.totalRounds} rounds completed${mid ? ' (the round in progress won’t count)' : ''}. Final standings go on the TV and the game is saved to the record book.`;
+    if (!confirm(msg)) return;
+    HOST_ACTIONS.finish(true);
   },
   playAgain() {
     snapshot();

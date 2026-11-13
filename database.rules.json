@@ -1,16 +1,7 @@
 {
   "rules": {
-    "games": {
-      "$gameId": {
-        ".read": true,
-        ".write": true
-      }
-    },
-    "history": {
-      "$gameId": {
-        ".read": true,
-        ".write": true
-      }
-    }
+    "games":   { "$gameId": { ".read": true, ".write": true } },
+    "history": { "$gameId": { ".read": true, ".write": true } },
+    "sets":    { "$gameId": { ".read": true, ".write": true } }
   }
 }

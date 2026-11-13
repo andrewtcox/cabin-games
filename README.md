@@ -25,7 +25,7 @@ With the Firebase settings left blank, the game runs in **local demo mode**: eve
 ### 1. Create the Firebase database (free)
 1. Go to <https://console.firebase.google.com> → **Add project**. Name it anything (e.g. `cabin-games`). You can turn Google Analytics off.
 2. In the left menu: **Build → Realtime Database → Create database**. Pick the US location, then **Start in locked mode**.
-3. Open the **Rules** tab, replace everything with the contents of `database.rules.json` from this folder, and click **Publish**. (These rules cover both the live game and the record book.)
+3. Open the **Rules** tab, replace everything with the contents of `database.rules.json` from this folder, and click **Publish**. (These rules cover the live game, the record book, and your question sets.)
 4. Click the gear icon → **Project settings** → under *Your apps* click the **`</>`** (Web) icon. Register an app (no hosting needed).
 5. Firebase shows a `firebaseConfig = { ... }` block. Copy the values into `js/config.js`.
    - Make sure `databaseURL` is filled in. It looks like `https://cabin-games-default-rtdb.firebaseio.com`. If it's missing from the snippet, copy it from the top of the Realtime Database page.
@@ -81,8 +81,10 @@ How many feet tall is Mount Everest? | 29032 | ft | 2020 survey
 
 - The **last line is the final round** (2× payouts).
 - Answers can be negative and use shorthand: `1.2m`, `45k`.
-- Edits are saved **on the host laptop only**, so your real questions don't have to go in the public repo. If you want them in the repo instead, edit `js/questions.js` (but anyone with the link could read them there).
-- **Restore starter sets** in the editor brings back the originals.
+- Edits are saved **in your Firebase database**, so they survive browser cleanup and appear on any device you host from. They're not in the public GitHub repo, but they're stored in the same database as the game, so a tech-savvy player could find them.
+- The first time you open the host screen, it copies any sets saved on that laptop (or the starter sets) into the database.
+- The starter sets come from `js/questions.js`.
+- **Restore starter sets** in the editor replaces *all* sets in the database with what's in `js/questions.js`.
 
 ## Record book (stats across nights)
 Every finished game is saved automatically, in the Firebase database or in the browser in demo mode. The record book stays when you start new games and on later nights.

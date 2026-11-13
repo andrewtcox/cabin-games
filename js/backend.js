@@ -2,6 +2,7 @@
 // Each has two stores:
 //   game    -> the live game         (Firebase path games/<GAME_ID>)
 //   history -> finished-game records (Firebase path history/<GAME_ID>), kept across games and nights
+//   sets    -> the host's question sets (Firebase path sets/<GAME_ID>)
 // A store has: on(cb), update(paths), set(obj). update() takes {'a/b/c': value}; null deletes.
 // For convenience the game store is also exposed as onGame / update / setRoot.
 
@@ -42,7 +43,7 @@ async function firebaseBackend(cfg, gameId) {
   const store = (path) => {
     const r = ref(db, path);
     return {
-      on(cb) { onValue(r, (s) => cb(s.val() || {})); },
+      on(cb, onErr) { onValue(r, (s) => cb(s.val() || {}), onErr); },
       update(paths) { return update(r, paths); },
       set(obj) { return set(r, obj); },
     };
@@ -51,6 +52,7 @@ async function firebaseBackend(cfg, gameId) {
     mode: 'firebase',
     game: store(`games/${gameId}`),
     history: store(`history/${gameId}`),
+    sets: store(`sets/${gameId}`),
     now() { return Date.now() + offset; },
   };
 }
@@ -95,9 +97,10 @@ function localBackend(gameId) {
 
   const game = store('ww-local-' + gameId);
   const history = store('ww-history-' + gameId);
+  const sets = store('ww-setsdb-' + gameId);
   const emitKey = (k) => all.forEach((s) => { if (s.key === k) s.emit(); });
   if (channel) channel.onmessage = (e) => emitKey(e.data);
   window.addEventListener('storage', (e) => emitKey(e.key));
 
-  return { mode: 'local', game, history, now() { return Date.now(); } };
+  return { mode: 'local', game, history, sets, now() { return Date.now(); } };
 }
