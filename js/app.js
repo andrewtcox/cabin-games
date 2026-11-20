@@ -122,6 +122,26 @@ const sound = (() => {
 // ── Shared bits ─────────────────────────────────────────────────────────────
 const teamChip = (t, extra = '') => `<span class="team-chip team-${t} ${extra}">${esc(teamName(t))}</span>`;
 const oddsTxt = (o) => `${o}:1`;
+const SOLO = () => !!G.noTeams; // "every player for themselves" mode
+
+// Who won the game, for the TV / phone game-over screens.
+function outcome() {
+  if (SOLO()) {
+    const r = rankPlayers(players());
+    const top = r[0];
+    const tie = top && r[1] && r[1].chips === top.chips;
+    return { cls: '', title: !top ? 'Game over' : tie ? 'It’s a tie!' : esc(top.name) + ' wins!', score: top ? `${top.chips} chips` : '' };
+  }
+  const tt = teamTotals(players());
+  const winner = (tt[1] || 0) === (tt[2] || 0) ? null : (tt[1] || 0) > (tt[2] || 0) ? 1 : 2;
+  return { cls: winner ? 'team-' + winner : '', title: winner ? esc(teamName(winner)) + ' wins!' : 'It’s a tie!', score: `${tt[1] || 0} – ${tt[2] || 0}` };
+}
+// One-line result for a saved game in the record book.
+function recordOutcome(r) {
+  const mvp = (r.players || []).find((p) => p.rank === 1);
+  if (r.solo) return `Solo game · ${mvp ? esc(mvp.name) + ' won (' + mvp.chips + ')' : ''}`;
+  return `${r.winner ? esc(teamName(r.winner)) + ' won' : 'Tie'} ${r.teamTotals?.t1 ?? 0}–${r.teamTotals?.t2 ?? 0}${mvp ? ' · MVP ' + esc(mvp.name) + ' (' + mvp.chips + ')' : ''}`;
+}
 
 function betsBySlot() {
   const by = {};
@@ -159,7 +179,11 @@ function renderTV() {
 
 function tvLobby() {
   const ps = players();
-  const teams = [1, 2].map((t) => {
+  const soloList = Object.values(ps).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+  const teams = SOLO()
+    ? `<div class="card lobby-team solo"><div class="row-between"><span class="team-chip lg team-0">Every player for themselves</span><span class="muted">${soloList.length} joined</span></div>
+        <div class="solo-grid">${soloList.map((p) => `<div class="lobby-player">${esc(p.name)}</div>`).join('') || '<div class="lobby-player open">Waiting for players…</div>'}</div></div>`
+    : [1, 2].map((t) => {
     const list = Object.values(ps).filter((p) => p.team === t).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
     const slots = list.map((p) => `<div class="lobby-player">${esc(p.name)}</div>`);
     for (let i = list.length; i < TEAM_SIZE; i++) slots.push(`<div class="lobby-player open">Open spot</div>`);
@@ -177,7 +201,7 @@ function tvLobby() {
         <div class="qr-label">Scan to join</div>
         <div class="muted center small">${esc(joinUrl().replace(/^https?:\/\//, ''))}</div>
       </div>
-      <div class="lobby-teams">${teams}</div>
+      <div class="lobby-teams ${SOLO() ? 'one' : ''}">${teams}</div>
     </div>
     <div class="muted center big">${G.setName ? `Tonight’s theme: <b class="dark">${esc(G.setName)}</b> · ` : ''}Waiting for the host to start the game…</div>`;
 }
@@ -186,7 +210,7 @@ function tvGuessing() {
   const g = curGuesses();
   const tiles = rankPlayersByTeam().map((p) => {
     const done = g[p.pid] !== undefined;
-    return `<div class="status-tile ${done ? 'done team-' + p.team : 'waiting'}"><div class="st-name">${esc(p.name)}</div><div class="st-status">${done ? '✓ locked in' : 'thinking…'}</div></div>`;
+    return `<div class="status-tile ${done ? 'done team-' + (SOLO() ? 0 : p.team) : 'waiting'}"><div class="st-name">${esc(p.name)}</div><div class="st-status">${done ? '✓ locked in' : 'thinking…'}</div></div>`;
   }).join('');
   const n = Object.keys(g).filter((pid) => players()[pid]).length;
   return `
@@ -217,7 +241,7 @@ function tvSlots(mode) {
       <div class="slot-value ${s.key === LOWER_KEY ? 'lower' : ''}">${esc(slotLabel(s))}</div>
       <div class="slot-bets">
         <div class="tiny-label">${win && mode === 'reveal' ? 'WINNER' : 'Bets'}</div>
-        <div class="bet-dots">${b.tokens.map((t) => `<span class="bet-dot team-${t.team}">${esc(t.i)}</span>`).join('')}</div>
+        <div class="bet-dots">${b.tokens.map((t) => `<span class="bet-dot team-${SOLO() ? 0 : t.team}">${esc(t.i)}</span>`).join('')}</div>
         <div class="muted small">${b.chips ? '+' + b.chips + ' chip' + (b.chips > 1 ? 's' : '') : ''}</div>
       </div>
     </div>`;
@@ -268,16 +292,16 @@ function tvScores() {
   const rows = ranked.map((p, i) => `
     <div class="score-row">
       <div class="rank">${i + 1}</div><div class="sname">${esc(p.name)}</div>
-      <div class="bar-track"><div class="bar team-${p.team}" style="width:${Math.round((p.chips / max) * 100)}%"></div></div>
+      <div class="bar-track"><div class="bar team-${SOLO() ? 0 : p.team}" style="width:${Math.round((p.chips / max) * 100)}%"></div></div>
       <div class="schips">${p.chips}</div>
       <div class="sdelta ${p.lastDelta > 0 ? 'pos' : p.lastDelta < 0 ? 'neg' : 'muted'}">${p.lastDelta > 0 ? '+' + p.lastDelta : p.lastDelta < 0 ? '−' + Math.abs(p.lastDelta) : '0'}</div>
     </div>`).join('');
   return `
     <div class="tv-head"><div class="tv-title md">${G.phase === 'over' ? 'Final standings' : `Standings after Round ${(G.round || 0) + 1}`}</div><div class="pips">${rounds}</div></div>
-    <div class="team-totals">
+    ${SOLO() ? '' : `<div class="team-totals">
       <div class="team-total team-1"><span>${esc(teamName(1))}</span><b>${tt[1] || 0}</b></div>
       <div class="team-total team-2"><span>${esc(teamName(2))}</span><b>${tt[2] || 0}</b></div>
-    </div>
+    </div>`}
     <div class="card score-card">${rows || '<div class="muted">No players yet</div>'}</div>`;
 }
 
@@ -295,7 +319,7 @@ function tvThemes() {
     <div class="tv-head"><div><div class="eyebrow">Wits &amp; Wagers</div><div class="tv-title md">${G.setId ? 'Tonight’s theme' : 'Pick tonight’s theme'}</div></div>
       <div class="muted big">${playerCount()} players ready</div></div>
     <div class="theme-grid">${cards}</div>
-    <div class="muted center big">Last question of every theme pays double</div>`;
+    <div class="muted center big">${SOLO() ? 'Every player for themselves' : 'Teams'} · Last question of every theme pays double</div>`;
 }
 
 function tvRecord() {
@@ -305,8 +329,8 @@ function tvRecord() {
   const games = recs.map((r) => {
     const mvp = (r.players || []).find((p) => p.rank === 1);
     return `<div class="rec-game"><div class="small muted">${esc(new Date(r.finishedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }))} · ${esc(r.setName || '')}${r.endedEarly ? ` (${r.rounds} of ${r.totalRounds} rounds)` : ''}</div>
-      <div class="strong">${r.winner ? esc(teamName(r.winner)) + ' won' : 'Tie'} ${r.teamTotals?.t1 ?? 0}–${r.teamTotals?.t2 ?? 0}</div>
-      ${mvp ? `<div class="small">MVP: ${esc(mvp.name)} (${mvp.chips})</div>` : ''}</div>`;
+      <div class="strong">${r.solo ? 'Solo game' : (r.winner ? esc(teamName(r.winner)) + ' won' : 'Tie') + ` ${r.teamTotals?.t1 ?? 0}–${r.teamTotals?.t2 ?? 0}`}</div>
+      ${mvp ? `<div class="small">${r.solo ? 'Winner' : 'MVP'}: ${esc(mvp.name)} (${mvp.chips})</div>` : ''}</div>`;
   }).join('');
   return `
     <div class="tv-head"><div><div class="eyebrow">All-time</div><div class="tv-title md">The Record Book</div></div><div class="muted big">${Object.keys(HISTORY).length} games played</div></div>
@@ -317,14 +341,13 @@ function tvRecord() {
 }
 
 function tvOver() {
-  const tt = teamTotals(players());
-  const winner = (tt[1] || 0) === (tt[2] || 0) ? null : (tt[1] || 0) > (tt[2] || 0) ? 1 : 2;
+  const o = outcome();
   const top = rankPlayers(players())[0];
   return `
-    <div class="over-banner ${winner ? 'team-' + winner : ''}">
+    <div class="over-banner ${o.cls}">
       <div class="eyebrow">Game over</div>
-      <div class="over-title">${winner ? esc(teamName(winner)) + ' wins!' : 'It’s a tie!'}</div>
-      <div class="big">${tt[1] || 0} – ${tt[2] || 0}${top ? ` · Top player: ${esc(top.name)} (${top.chips})` : ''}${G.setName ? ' · ' + esc(G.setName) : ''}</div>
+      <div class="over-title">${o.title}</div>
+      <div class="big">${o.score}${top && !SOLO() ? ` · Top player: ${esc(top.name)} (${top.chips})` : ''}${G.setName ? ' · ' + esc(G.setName) : ''}</div>
       <div class="small">${G.endedEarly != null ? `Ended early after ${G.endedEarly} of ${G.totalRounds} rounds · ` : ''}Saved to the record book</div>
     </div>
     ${tvScores().replace(/<div class="tv-head">[\s\S]*?<\/div><\/div>/, '')}`;
@@ -392,7 +415,7 @@ function renderPlayer() {
   if (!me()) return phoneJoin();
   syncDraft();
   const p = me();
-  const head = `<div class="phone-head"><span>${esc(p.name)} · ${teamChip(p.team, 'sm')}</span><span class="strong">${p.chips || 0} chips</span></div>`;
+  const head = `<div class="phone-head"><span>${esc(p.name)}${SOLO() ? '' : ' · ' + teamChip(p.team, 'sm')}</span><span class="strong">${p.chips || 0} chips</span></div>`;
   const body = { lobby: phoneLobby, themes: phoneLobby, guessing: phoneGuess, betting: phoneBet, reveal: phoneResult, scores: phoneResult, over: phoneOver }[G.phase] || phoneLobby;
   return `<div class="phone">${head}${body()}</div>`;
 }
@@ -409,8 +432,8 @@ function phoneJoin() {
     <div><div class="eyebrow">Cabin Game Show Night</div><div class="phone-title">Wits &amp; Wagers</div></div>
     <label class="field-label" for="name">Your name</label>
     <input id="name" class="text-input" maxlength="16" autocomplete="off" placeholder="First name">
-    <div class="field-label">Pick your team</div>
-    <div class="two-col">${btn(1)}${btn(2)}</div>
+    ${SOLO() ? '<div class="muted small">Tonight it’s every player for themselves — no teams.</div>' : `<div class="field-label">Pick your team</div>
+    <div class="two-col">${btn(1)}${btn(2)}</div>`}
     ${joinError ? `<div class="error">${esc(joinError)}</div>` : ''}
     <div class="grow"></div>
     <button class="primary" data-act="join">Join game</button>
@@ -513,7 +536,8 @@ function phoneResult() {
     ${lines.length ? `<div class="lines">${lines.map((l) => `<div class="line"><span>${esc(l.text)}</span><b>${l.amt > 0 ? '+' : '−'}${Math.abs(l.amt)}</b></div>`).join('')}</div>` : ''}
     <div class="two-col">
       <div class="stat"><div class="muted small">Your chips</div><div class="stat-val">${me().chips || 0} · ${ordinal(myRank())}</div></div>
-      <div class="stat"><div class="muted small">${esc(teamName(1))} vs ${esc(teamName(2))}</div><div class="stat-val">${tt[1] || 0} – ${tt[2] || 0}</div></div>
+      ${SOLO() ? `<div class="stat"><div class="muted small">Leader</div><div class="stat-val">${esc(rankPlayers(players())[0]?.name || '—')} · ${rankPlayers(players())[0]?.chips || 0}</div></div>`
+        : `<div class="stat"><div class="muted small">${esc(teamName(1))} vs ${esc(teamName(2))}</div><div class="stat-val">${tt[1] || 0} – ${tt[2] || 0}</div></div>`}
     </div>
     <div class="grow"></div>
     <div class="muted center">Look up at the TV · next round starts when the host is ready</div>`;
@@ -532,12 +556,11 @@ function myGameStats() {
 }
 
 function phoneOver() {
-  const tt = teamTotals(players());
-  const winner = (tt[1] || 0) === (tt[2] || 0) ? null : (tt[1] || 0) > (tt[2] || 0) ? 1 : 2;
+  const o = outcome();
   return `<div class="phone-center">
     <div class="eyebrow">Game over</div>
-    <div class="phone-title">${winner ? esc(teamName(winner)) + ' wins!' : 'It’s a tie!'}</div>
-    <div class="big strong">${tt[1] || 0} – ${tt[2] || 0}</div>
+    <div class="phone-title">${o.title}</div>
+    <div class="big strong">${o.score}</div>
     <div class="stat wide"><div class="muted small">You finished</div><div class="stat-val">${ordinal(myRank())} · ${me().chips || 0} chips</div></div>
     ${myGameStats()}
   </div>`;
@@ -632,7 +655,11 @@ function primaryAction() {
 
 function hostSetPicker() {
   return `<div class="card">
-    <div class="tiny-label">Choose tonight’s theme ${G.phase === 'themes' ? '· showing on TV' : ''}</div>
+    <div class="row-between"><div class="tiny-label">Choose tonight’s theme ${G.phase === 'themes' ? '· showing on TV' : ''}</div>
+      <div class="mode-switch" role="group" aria-label="Game mode">
+        <button class="${SOLO() ? '' : 'on'}" data-act="setMode" data-mode="teams">Teams</button>
+        <button class="${SOLO() ? 'on' : ''}" data-act="setMode" data-mode="solo">Every player for themselves</button>
+      </div></div>
     <div class="set-grid">${SETS.map((s) => {
       const lp = lastPlayed(s.id);
       return `<button class="set-btn ${G.setId === s.id ? 'selected' : ''}" data-act="pickSet" data-id="${esc(s.id)}">
@@ -646,7 +673,7 @@ function hostRecordCard() {
   const recs = Object.entries(HISTORY).sort((a, b) => (b[1].finishedAt || 0) - (a[1].finishedAt || 0));
   const list = recs.map(([k, r]) => {
     const mvp = (r.players || []).find((p) => p.rank === 1);
-    return `<div class="hist-row"><div><b>${esc(shortDate(r.finishedAt))}</b> · ${esc(r.setName || 'Custom')}${r.endedEarly ? ` <span class="muted small">(${r.rounds} of ${r.totalRounds} rounds)</span>` : ''}<div class="small muted">${r.winner ? esc(teamName(r.winner)) + ' won' : 'Tie'} ${r.teamTotals?.t1 ?? 0}–${r.teamTotals?.t2 ?? 0}${mvp ? ' · MVP ' + esc(mvp.name) + ' (' + mvp.chips + ')' : ''}</div></div>
+    return `<div class="hist-row"><div><b>${esc(shortDate(r.finishedAt))}</b> · ${esc(r.setName || 'Custom')}${r.endedEarly ? ` <span class="muted small">(${r.rounds} of ${r.totalRounds} rounds)</span>` : ''}<div class="small muted">${recordOutcome(r)}</div></div>
       <button class="mini" data-act="deleteRecord" data-key="${esc(k)}" title="Delete this game from the record book">✕</button></div>`;
   }).join('');
   return `<div class="card">
@@ -679,10 +706,10 @@ function renderHost() {
     const betTxt = bet ? Object.entries(bet.tokens || {}).map(([k, n]) => `${n}× ${label(k)}${bet.chips && bet.chips[k] ? ` +${bet.chips[k]}c` : ''}`).join(', ') + (bet.locked ? ' ✓' : '') : (G.phase === 'betting' ? '<span class="warn">waiting…</span>' : '—');
     const guessTxt = g[p.pid] !== undefined ? formatNum(g[p.pid]) : (G.phase === 'guessing' ? '<span class="warn">waiting…</span>' : '—');
     return `<div class="prow">
-      <div class="pname"><span class="dot team-${p.team}"></span>${esc(p.name)}</div>
+      <div class="pname"><span class="dot team-${SOLO() ? 0 : p.team}"></span>${esc(p.name)}</div>
       <div>${guessTxt}</div><div class="small">${betTxt}</div><div class="right strong">${p.chips || 0}</div>
       <div class="pactions">
-        <button class="mini" data-act="moveTeam" data-pid="${p.pid}" title="Move to other team">⇄</button>
+        ${SOLO() ? '' : `<button class="mini" data-act="moveTeam" data-pid="${p.pid}" title="Move to other team">⇄</button>`}
         <button class="mini" data-act="editPlayerGuess" data-pid="${p.pid}" title="Edit guess">✎</button>
         <button class="mini" data-act="removePlayer" data-pid="${p.pid}" title="Remove player">✕</button>
       </div></div>`;
@@ -874,6 +901,7 @@ const HOST_ACTIONS = {
     const set = activeSet();
     const rec = gameRecord(G, { setId: G.setId, setName: set ? set.name : G.setName, finishedAt: backend.now() });
     rec.totalRounds = G.totalRounds || rec.rounds;
+    if (SOLO()) { rec.solo = true; rec.winner = 0; delete rec.teamTotals; }
     if (early) rec.endedEarly = true;
     backend.history.update({ [key]: rec });
     backend.update({ phase: 'over', gameKey: key, clock: null, endedEarly: early ? rec.rounds : null });
@@ -889,7 +917,7 @@ const HOST_ACTIONS = {
     snapshot();
     const ps = {};
     for (const [pid, p] of Object.entries(players())) ps[pid] = { name: p.name, team: p.team, chips: 0, joinedAt: p.joinedAt || 0 };
-    backend.setRoot({ phase: 'lobby', round: 0, players: ps });
+    backend.setRoot({ phase: 'lobby', round: 0, players: ps, ...(G.noTeams ? { noTeams: true } : {}) });
   },
   newGame() {
     const keep = confirm('Start a new game?\n\nOK = keep the players who joined, reset chips to 0, pick a new theme.\nCancel = do nothing.\n\n(Finished games stay in the record book.)');
@@ -911,6 +939,19 @@ const HOST_ACTIONS = {
     const c = G.clock; if (!c) return;
     if (c.pausedLeft != null) backend.update({ 'clock/pausedLeft': c.pausedLeft + 15000 });
     else backend.update({ 'clock/endsAt': Math.max(c.endsAt, backend.now()) + 15000 });
+  },
+  setMode(d) {
+    if (!['lobby', 'themes'].includes(G.phase)) return;
+    if (d.mode === 'solo') { backend.update({ noTeams: true }); return; }
+    // Teams back on: put anyone without a team on the smaller team.
+    const paths = { noTeams: null };
+    const counts = { 1: 0, 2: 0 };
+    const ps = Object.entries(players()).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
+    ps.forEach(([, p]) => { if (p.team === 1 || p.team === 2) counts[p.team]++; });
+    ps.forEach(([pid, p]) => {
+      if (p.team !== 1 && p.team !== 2) { const t = counts[1] <= counts[2] ? 1 : 2; counts[t]++; paths[`players/${pid}/team`] = t; }
+    });
+    backend.update(paths);
   },
   toggleRecord() { backend.update({ showRecord: G.showRecord ? null : true }); },
   deleteRecord(d) {
@@ -960,11 +1001,11 @@ const ACTIONS = {
   join() {
     const name = (document.getElementById('name')?.value || '').trim();
     if (!name) { joinError = 'Type your name first.'; return render(); }
-    if (!joinTeam) { joinError = 'Pick a team.'; return render(); }
+    if (!joinTeam && !SOLO()) { joinError = 'Pick a team.'; return render(); }
     const taken = Object.entries(players()).some(([pid, p]) => pid !== PID && String(p.name || '').toLowerCase() === name.toLowerCase());
     if (taken) { joinError = 'Someone already has that name — add an initial.'; return render(); }
     joinError = '';
-    backend.update({ [`players/${PID}`]: { name, team: joinTeam, chips: 0, joinedAt: backend.now() } });
+    backend.update({ [`players/${PID}`]: { name, team: SOLO() ? 0 : joinTeam, chips: 0, joinedAt: backend.now() } });
   },
   key(d) {
     const k = d.k;

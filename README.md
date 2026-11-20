@@ -93,6 +93,9 @@ Every finished game is saved automatically, in the Firebase database or in the b
 - On the host screen you can delete a game from the record book (✕, e.g. a test game) or **Download CSV** for a spreadsheet.
 - **Undo** right after finishing a game also removes it from the record book.
 
+## Teams or every player for themselves
+In the lobby, the host screen has a **Teams / Every player for themselves** switch above the theme list. With teams off, players just type a name, the TV shows one list, the leaderboard ranks individuals, and the winner is the top player. The record book counts these games toward each player's stats but not toward team wins. Switching teams back on puts anyone without a team on the smaller team. The setting carries over when you click **Play again**.
+
 ## Settings
 In `js/config.js`: team names, team size, clock length, and `GAME_ID`. Changing `GAME_ID` starts a completely separate game, for example a test game vs. the real one.
 

@@ -223,3 +223,13 @@ body.view-play { background: var(--card); }
 .text-input.sm { height: 42px; font-size: 15px; margin-top: 8px; }
 .hist-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line-soft); font-size: 14px; }
 .wide-grid { width: 100%; text-align: left; }
+.secondary.danger { color: var(--neg); border-color: #FCA5A5; }
+
+/* every-player-for-themselves mode */
+.team-0 { background: var(--ink); color: #fff; }
+.bar.team-0 { background: var(--ink); }
+.lobby-teams.one { grid-template-columns: minmax(0, 1fr); }
+.solo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75em; }
+.mode-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mode-switch button { border: 0; background: var(--card); padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.mode-switch button.on { background: var(--ink); color: #fff; }

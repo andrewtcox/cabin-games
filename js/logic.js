@@ -28,7 +28,10 @@ export function parseGuess(raw) {
 
 export function formatNum(v) {
   if (v === null || v === undefined || Number.isNaN(v)) return '—';
-  return Number(v).toLocaleString('en-US', { maximumFractionDigits: 3 });
+  const n = Number(v);
+  // Year-like numbers (1000–2100) read better without a comma: 1937, not 1,937.
+  if (Number.isInteger(n) && n >= 1000 && n <= 2100) return String(n);
+  return n.toLocaleString('en-US', { maximumFractionDigits: 3 });
 }
 
 // Unique guesses sorted low -> high, plus the "lower than all" slot at 6:1.
@@ -178,12 +181,12 @@ export function allTimeStats(history = {}) {
 }
 
 export function historyCsv(history = {}) {
-  const rows = [['date', 'theme', 'winning team', 'team 1 total', 'team 2 total', 'player', 'team', 'final chips', 'rank', 'closest guesses', 'rounds with a winning bet', 'best round']];
+  const rows = [['date', 'theme', 'result', 'team 1 total', 'team 2 total', 'player', 'team', 'final chips', 'rank', 'closest guesses', 'rounds with a winning bet', 'best round']];
   const recs = Object.values(history).sort((a, b) => (a.finishedAt || 0) - (b.finishedAt || 0));
   for (const r of recs) {
     const d = new Date(r.finishedAt || 0).toISOString().slice(0, 16).replace('T', ' ');
     for (const p of r.players || []) {
-      rows.push([d, r.setName, r.winner ? 'Team ' + r.winner : 'Tie', r.teamTotals?.t1 ?? '', r.teamTotals?.t2 ?? '', p.name, p.team, p.chips, p.rank, p.closest, p.winningBets, p.bestRound]);
+      rows.push([d, r.setName, r.solo ? 'Solo game' : r.winner ? 'Team ' + r.winner : 'Tie', r.teamTotals?.t1 ?? '', r.teamTotals?.t2 ?? '', p.name, p.team, p.chips, p.rank, p.closest, p.winningBets, p.bestRound]);
     }
   }
   return rows.map((r) => r.map((c) => /[",\n]/.test(String(c)) ? '"' + String(c).replace(/"/g, '""') + '"' : c).join(',')).join('\n');
